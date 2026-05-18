@@ -1,0 +1,1 @@
+"""Posting compression (FUTURE)."""
