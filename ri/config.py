@@ -18,7 +18,7 @@ ANTI_DICT_PATH: Path = DATA_DIR / "anti_dict.txt"
 
 SPACY_MODEL: str = "fr_core_news_sm"
 
-ANTI_DICT_TFIDF_THRESHOLD: float = 0.10
+ANTI_DICT_TFIDF_THRESHOLD: float = 0.0001
 
 SCORE_WEIGHT_TITLE_IN_TITRE: float = 3.0
 SCORE_WEIGHT_CONTENT_IN_TITRE: float = 3.0
