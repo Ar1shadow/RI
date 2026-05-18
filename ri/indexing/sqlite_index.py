@@ -48,11 +48,12 @@ class SQLiteIndex(Index):
 
     def add_document(self, doc: Document) -> int:
         cur = self.conn.cursor()
+        article_id = Path(doc.fichier).stem
         cur.execute(
             """INSERT INTO documents (fichier, bulletin, article, titre, auteur,
                                        date, rubrique, has_image, raw_text)
                VALUES (?,?,?,?,?,?,?,?,?)""",
-            (doc.fichier, doc.bulletin, "", doc.titre, doc.auteur,
+            (doc.fichier, doc.bulletin, article_id, doc.titre, doc.auteur,
              doc.date, doc.rubrique, int(doc.has_image), doc.text),
         )
         assert cur.lastrowid is not None
@@ -125,7 +126,7 @@ class SQLiteIndex(Index):
             return []
         placeholders = ",".join("?" * len(ids))
         rows = self.conn.execute(
-            f"""SELECT doc_id, fichier, bulletin, titre, auteur, date, rubrique,
+            f"""SELECT doc_id, fichier, bulletin, article, titre, auteur, date, rubrique,
                        has_image, raw_text
                 FROM documents WHERE doc_id IN ({placeholders})""",
             ids,
