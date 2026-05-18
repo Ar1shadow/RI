@@ -41,7 +41,7 @@ class SQLiteIndex(Index):
         """Drop and recreate all tables (used by builder before a fresh build)."""
         cur = self.conn.cursor()
         for tbl in ("postings", "idf", "doc_length", "vocabulary",
-                    "anti_dict", "corpus_stats", "documents"):
+                    "anti_dict", "corpus_stats", "surface_forms", "documents"):
             cur.execute(f"DROP TABLE IF EXISTS {tbl}")
         self.conn.commit()
         self._init_schema()
@@ -143,3 +143,27 @@ class SQLiteIndex(Index):
 
     def doc_count(self) -> int:
         return int(self.conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"])
+
+    def add_surface_forms(self, triples: Iterable[tuple[str, str, int]]) -> None:
+        """Bulk upsert ``(surface, lemma, freq)`` triples into ``surface_forms``.
+
+        On collision (same surface+lemma), the freq is incremented.
+        """
+        self.conn.executemany(
+            """INSERT INTO surface_forms(surface, lemma, freq) VALUES (?, ?, ?)
+               ON CONFLICT(surface, lemma) DO UPDATE SET freq = freq + excluded.freq""",
+            list(triples),
+        )
+
+    def surface_form_map(self) -> dict[str, str]:
+        """Return ``{surface: best_lemma}`` picking max-freq lemma per surface."""
+        rows = self.conn.execute(
+            """SELECT surface, lemma, freq FROM surface_forms
+               ORDER BY surface, freq DESC, lemma"""
+        ).fetchall()
+        best: dict[str, str] = {}
+        for r in rows:
+            s = r["surface"]
+            if s not in best:
+                best[s] = r["lemma"]
+        return best

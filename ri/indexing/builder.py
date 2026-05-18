@@ -24,7 +24,7 @@ from ri.config import (
 from ri.corpus.scraper import scrape_directory
 from ri.indexing.sqlite_index import SQLiteIndex
 from ri.preprocessing.antidict import load_anti_dict
-from ri.preprocessing.tokenizer import lemmatize
+from ri.preprocessing.tokenizer import lemmatize, lemmatize_keep_text
 
 ZONES = ("titre", "texte")
 
@@ -51,6 +51,7 @@ def build_index(
     per_doc_zone_counts: dict[int, dict[str, Counter[str]]] = {}
     df: Counter[str] = Counter()  # doc frequency per term
     max_tfidf: dict[str, float] = {}
+    surface_lemma_counts: Counter[tuple[str, str]] = Counter()
 
     index = SQLiteIndex(db_path)
     index.reset()
@@ -63,6 +64,9 @@ def build_index(
             seen_terms_this_doc.update(zone_counts[zone].keys())
         for term in seen_terms_this_doc:
             df[term] += 1
+        for zone_text in (doc.titre, doc.text):
+            for surface, lemma in lemmatize_keep_text(zone_text):
+                surface_lemma_counts[(surface, lemma)] += 1
 
     n_docs = len(docs)
     print(f"[build] vocabulary size {len(df)} — computing TF-IDF")
@@ -98,6 +102,11 @@ def build_index(
     index.set_corpus_stat("N", float(n_docs))
     index.set_corpus_stat("avg_len_titre", sum_len_titre / n_docs if n_docs else 0.0)
     index.set_corpus_stat("avg_len_texte", sum_len_texte / n_docs if n_docs else 0.0)
+
+    index.add_surface_forms(
+        (surface, lemma, freq) for (surface, lemma), freq in surface_lemma_counts.items()
+    )
+    print(f"[build] surface_forms entries {len(surface_lemma_counts)}")
 
     seed_terms = load_anti_dict(ANTI_DICT_PATH)
     dynamic_terms = {term for term, score in max_tfidf.items() if score <= threshold}

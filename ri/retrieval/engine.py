@@ -20,11 +20,16 @@ from datetime import datetime
 from typing import Any
 
 from ri.config import DB_PATH
+from ri.correction.base import CorrectionResult, Corrector
+from ri.correction.levenshtein import LevenshteinCorrector
+from ri.correction.lexicon import SurfaceLexicon
 from ri.indexing.sqlite_index import SQLiteIndex
 from ri.query.ast_nodes import DateFilter, ParsedQuery
 from ri.query.parser import FrenchQueryParser
 from ri.ranking.base import Scorer
 from ri.ranking.vsm import VSMScorer
+
+_DISABLE_CORRECTOR = object()  # sentinel: pass to disable corrector explicitly
 
 _MOIS_FR = {
     "janvier": 1, "février": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6,
@@ -168,22 +173,48 @@ def _docs_matching_exclusions(index: SQLiteIndex, exclusions: Sequence[str]) -> 
 
 
 class SearchService:
-    """Search facade — owns an Index, a parser, and a scorer."""
+    """Search facade — owns an Index, a parser, a scorer, and a corrector.
+
+    The corrector runs over the raw query string before parsing. Pass
+    ``corrector=None`` to disable spell correction (the parser then sees the
+    raw query unchanged).
+    """
 
     def __init__(
         self,
         index: SQLiteIndex | None = None,
         scorer: Scorer | None = None,
+        corrector: Corrector | None | object = _DISABLE_CORRECTOR,
     ) -> None:
         self.index = index or SQLiteIndex(DB_PATH)
         self.parser = FrenchQueryParser(self.index)
         self.scorer = scorer or VSMScorer()
+        if corrector is _DISABLE_CORRECTOR:
+            self._corrector: Corrector | None = None
+            self._corrector_lazy: bool = True
+        else:
+            self._corrector = corrector  # type: ignore[assignment]
+            self._corrector_lazy = False
+        self.last_correction: CorrectionResult | None = None
 
     def close(self) -> None:
         self.index.close()
 
+    def _ensure_corrector(self) -> Corrector | None:
+        if self._corrector is None and self._corrector_lazy:
+            lex = SurfaceLexicon.from_index_with_metadata(self.index)
+            self._corrector = LevenshteinCorrector(lex)
+            self._corrector_lazy = False
+        return self._corrector
+
     def run(self, raw_query: str, mode: str = "classe") -> list[dict[str, Any]]:
         """Return matching documents ordered by ``mode`` (``classe``: score; ``booleen``: date desc)."""
+        corrector = self._ensure_corrector()
+        if corrector is not None:
+            self.last_correction = corrector.correct(raw_query)
+            raw_query = self.last_correction.corrected_query
+        else:
+            self.last_correction = None
         parsed = self.parser.parse(raw_query)
         ranked = self.scorer.score(parsed, self.index)
         scored = dict(ranked)
@@ -219,11 +250,24 @@ class SearchService:
         return out
 
 
+def _correction_hint(svc: SearchService, original: str) -> str | None:
+    """Render a one-line "Corrected:" hint when the corrector changed anything."""
+    cr = svc.last_correction
+    if cr is None or cr.corrected_query == original:
+        return None
+    if not any(t.status.startswith("corrige") for t in cr.tokens):
+        return None
+    return f"Corrected: {original!r} → {cr.corrected_query!r}"
+
+
 def run_single_query(raw: str, mode: str = "classe") -> None:
     """Print results for one query (used by ``ri query <text>``)."""
     svc = SearchService()
     try:
         docs = svc.run(raw, mode=mode)
+        hint = _correction_hint(svc, raw)
+        if hint:
+            print(hint)
         if not docs:
             print("(aucun résultat)")
             return
@@ -253,6 +297,9 @@ def run_query_repl() -> None:
                 print(f"(mode = {mode})")
                 continue
             docs = svc.run(line, mode=mode)
+            hint = _correction_hint(svc, line)
+            if hint:
+                print(hint)
             if not docs:
                 print("(aucun résultat)")
                 continue

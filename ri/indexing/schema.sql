@@ -52,3 +52,11 @@ CREATE TABLE IF NOT EXISTS corpus_stats (
 CREATE TABLE IF NOT EXISTS anti_dict (
     term        TEXT PRIMARY KEY
 );
+
+CREATE TABLE IF NOT EXISTS surface_forms (
+    surface  TEXT    NOT NULL,
+    lemma    TEXT    NOT NULL,
+    freq     INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (surface, lemma)
+);
+CREATE INDEX IF NOT EXISTS idx_surface_forms_surface ON surface_forms(surface);
