@@ -12,6 +12,7 @@ Doc-level set algebra:
 
 from __future__ import annotations
 
+import calendar
 import re
 from collections.abc import Sequence
 from datetime import date as date_t
@@ -131,10 +132,8 @@ def _docs_for_date(index: SQLiteIndex, df: DateFilter) -> set[int]:
         if not (s_my and e_my):
             return out
         start = date_t(s_my[1], s_my[0], 1)
-        end_month = e_my[0]
-        end_year = e_my[1]
-        end_day = 31 if end_month in {1, 3, 5, 7, 8, 10, 12} else (29 if end_month == 2 else 30)
-        end = date_t(end_year, end_month, end_day)
+        end_month, end_year = e_my[0], e_my[1]
+        end = date_t(end_year, end_month, calendar.monthrange(end_year, end_month)[1])
         for r in rows:
             try:
                 d = date_t.fromisoformat(r["date"])
@@ -205,8 +204,7 @@ class SearchService:
         if mode == "booleen":
             docs.sort(key=lambda d: d.get("date", ""), reverse=True)
         else:
-            docs.sort(key=lambda d: (-d["score"], d.get("date", "")), reverse=False)
-            docs.sort(key=lambda d: d["score"], reverse=True)
+            docs.sort(key=lambda d: (-d["score"], -ord(d.get("date", "")[:1] or "\x00")))
         return docs
 
     def _filter_sets(self, parsed: ParsedQuery) -> list[set[int]]:

@@ -27,6 +27,8 @@ def test_date_range(built_index):
     pq = parser.parse("Quels sont les articles parus entre le 3 mars 2013 et le 4 mai 2013")
     assert pq.filters.date is not None
     assert pq.filters.date.kind == "between_dmy"
+    assert "3 mars 2013" in (pq.filters.date.start or "")
+    assert "4 mai 2013" in (pq.filters.date.end or "")
 
 
 def test_acronym_broadcast(built_index):

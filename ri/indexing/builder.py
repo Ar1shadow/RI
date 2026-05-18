@@ -73,6 +73,12 @@ def build_index(
         idf = log10(n_docs / df_val) if df_val > 0 else 0.0
         index.set_idf(term_id, idf)
 
+    idf_cache: dict[str, float] = {
+        term: log10(n_docs / df_val) if df_val > 0 else 0.0
+        for term, df_val in df.items()
+    }
+    term_id_cache: dict[str, int] = {term: index.upsert_term(term) for term in df}
+
     sum_len_titre = 0
     sum_len_texte = 0
     for doc_id, zone_counts in per_doc_zone_counts.items():
@@ -83,13 +89,9 @@ def build_index(
         index.set_doc_length(doc_id, len_titre, len_texte)
         for zone in ZONES:
             for term, tf in zone_counts[zone].items():
-                idf = index.get_idf(term)
-                if idf == 0:
-                    tfidf = 0.0
-                else:
-                    tfidf = (1 + log10(tf)) * idf
-                term_id = index.upsert_term(term)
-                index.add_posting(term_id, doc_id, zone, tf, tfidf)
+                idf = idf_cache.get(term, 0.0)
+                tfidf = (1 + log10(tf)) * idf if idf else 0.0
+                index.add_posting(term_id_cache[term], doc_id, zone, tf, tfidf)
                 if tfidf > max_tfidf.get(term, float("-inf")):
                     max_tfidf[term] = tfidf
 
